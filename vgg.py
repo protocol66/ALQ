@@ -8,6 +8,7 @@ from binarynet import ConvLayer_bin, FCLayer_bin
 from myoptimizer import ALQ_optimizer
 from train import get_accuracy, train_fullprecision, train_basis, train_basis_STE, train_coordinate, validate, test, prune, initialize, save_model, save_model_ori
 
+import sys # to redirect print to file
 
 # Defining the network (VGG_small)  
 class VGG_small(torch.nn.Module):
@@ -141,7 +142,6 @@ if __name__ == "__main__":
                 test(net, test_loader, loss_func)
                 save_model_ori(args.model_ori, net, optimizer) 
         
-
     if args.ALQ:
         print('adaptive loss-aware quantization...')
 
@@ -155,6 +155,11 @@ if __name__ == "__main__":
             print(name)
             print(param.size())   
 
+        #------------------
+        orig_stdout = sys.stdout
+        f = open('alq_log.txt', 'w')
+        sys.stdout = f
+        #------------------
         print('initialization (structured sketching)...')
         parameters_w, parameters_b, parameters_w_bin = initialize(net, train_loader, loss_func, args.structure, args.subc, args.max_bit)
         optimizer_b = torch.optim.Adam(parameters_b, weight_decay=args.wd) 
@@ -202,6 +207,10 @@ if __name__ == "__main__":
                 test(net, test_loader, loss_func)
                 save_model(args.model, net, optimizer_w, optimizer_b, parameters_w_bin)
 
+        #-----------
+        sys.stdout = orig_stdout
+        f.close()
+        #-----------
 
     if args.POSTTRAIN:
         print('posttraining...')

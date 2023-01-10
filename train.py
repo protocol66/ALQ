@@ -13,7 +13,8 @@ def accuracy(output, target, correct_sum, topk=(1,)):
         correct = pred.eq(target.view(1, -1).expand_as(pred))
 
         for (i,k) in enumerate(topk):
-            correct_sum[i] += (correct[:k].view(-1).float().sum(0, keepdim=True)).item()
+            # correct_sum[i] += (correct[:k].view(-1).float().sum(0, keepdim=True)).item()
+            correct_sum[i] += (correct[:k].reshape(-1).float().sum(0, keepdim=True)).item()
         return 
 
 
