@@ -1,8 +1,21 @@
 import torch
 from binarynet import ConvLayer_bin, FCLayer_bin
 
+import logging
+from datetime import datetime
+
+logger = logging.getLogger('train')
+timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+logging.basicConfig(filename=f'logs/train_{timestamp}.log',
+                    format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+                    datefmt='%I:%M:%S %p',
+                    encoding='utf-8', level=logging.INFO)
 
 TOPK = (1,5)
+
+#------
+BATCH_LIMIT = 20000
+#-----
 
 def accuracy(output, target, correct_sum, topk=(1,)):
     """Compute the accuracy over the k top predictions for the specified values of k."""
@@ -26,7 +39,15 @@ def get_accuracy(net, train_loader, loss_func):
         num_batches = 0
         correct_sum = [0. for i in range(len(TOPK))]
         total = 0
-        for (inputs, labels) in train_loader:               
+        for (inputs, labels) in train_loader:
+            #------------------
+            if num_batches > BATCH_LIMIT:
+                num_batches = BATCH_LIMIT
+                logger.debug(f'reached batch limit of {BATCH_LIMIT}')
+                break;
+            if num_batches % 100 == 0:
+                logger.debug(f'running batch {num_batches} accuracy')
+            #------------------             
             inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
             outputs = net(inputs)
             loss = loss_func(outputs, labels)
@@ -35,7 +56,9 @@ def get_accuracy(net, train_loader, loss_func):
             train_loss += loss.data.item()
             num_batches += 1
         print('training loss: ', train_loss/num_batches)
-        print('training accuracy: ', [ci/total for ci in correct_sum])
+        train_acc = [ci/total for ci in correct_sum]
+        print('training accuracy: ', train_acc)
+        logger.info(f'training loss: {train_loss/num_batches}, accuracy: {train_acc}')
 
 
 def train_fullprecision(net, train_loader, loss_func, optimizer, epoch):
@@ -45,7 +68,15 @@ def train_fullprecision(net, train_loader, loss_func, optimizer, epoch):
     num_batches = 0
     correct_sum = [0. for i in range(len(TOPK))]
     total = 0
-    for (inputs, labels) in train_loader:               
+    for (inputs, labels) in train_loader:
+        #------------------
+        if num_batches > BATCH_LIMIT:
+            num_batches = BATCH_LIMIT
+            logger.debug(f'reached batch limit of {BATCH_LIMIT}')
+            break;
+        if num_batches % 100 == 0:
+            logger.debug(f'training FP batch {num_batches}')
+        #------------------                   
         inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
         optimizer.zero_grad()    
         outputs = net(inputs)
@@ -56,8 +87,10 @@ def train_fullprecision(net, train_loader, loss_func, optimizer, epoch):
         total += labels.size(0)
         train_loss += loss.data.item()
         num_batches += 1
-    print("epoch: ", epoch, ", training loss: ", train_loss/num_batches)            
-    print('training accuracy: ', [ci/total for ci in correct_sum])
+    print("epoch: ", epoch, ", training loss: ", train_loss/num_batches)
+    train_acc = [ci/total for ci in correct_sum]          
+    print('training accuracy: ', train_acc)
+    logger.info(f'epoch:{epoch} training loss: {train_loss/num_batches}, accuracy: {train_acc}')
 
 
 def train_coordinate(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_bin, epoch):
@@ -67,7 +100,15 @@ def train_coordinate(net, train_loader, loss_func, optimizer_w, optimizer_b, par
     num_batches = 0
     correct_sum = [0. for i in range(len(TOPK))]
     total = 0
-    for (inputs, labels) in train_loader:               
+    for (inputs, labels) in train_loader:
+        #------------------
+        if num_batches > BATCH_LIMIT:
+            num_batches = BATCH_LIMIT
+            logger.debug(f'reached batch limit of {BATCH_LIMIT}')
+            break;
+        if num_batches % 100 == 0:
+            logger.debug(f'training coord batch {num_batches}')
+        #------------------                       
         inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
         optimizer_w.zero_grad()
         optimizer_b.zero_grad()
@@ -81,7 +122,9 @@ def train_coordinate(net, train_loader, loss_func, optimizer_w, optimizer_b, par
         train_loss += loss.data.item()
         num_batches += 1    
     print("epoch: ", epoch, ", training loss: ", train_loss/num_batches) 
-    print('training accuracy: ', [ci/total for ci in correct_sum])
+    train_acc = [ci/total for ci in correct_sum]          
+    print('training accuracy: ', train_acc)
+    logger.info(f'epoch:{epoch} training loss: {train_loss/num_batches}, accuracy: {train_acc}')
  
   
 def train_basis(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_bin, epoch):
@@ -91,7 +134,15 @@ def train_basis(net, train_loader, loss_func, optimizer_w, optimizer_b, paramete
     num_batches = 0
     correct_sum = [0. for i in range(len(TOPK))]
     total = 0
-    for inputs, labels in train_loader:               
+    for inputs, labels in train_loader: 
+        #------------------
+        if num_batches > BATCH_LIMIT:
+            num_batches = BATCH_LIMIT
+            logger.debug(f'reached batch limit of {BATCH_LIMIT}')
+            break;
+        if num_batches % 100 == 0:
+            logger.debug(f'training basis batch {num_batches}')
+        #------------------                      
         inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
         optimizer_w.zero_grad()
         optimizer_b.zero_grad()
@@ -105,7 +156,9 @@ def train_basis(net, train_loader, loss_func, optimizer_w, optimizer_b, paramete
         train_loss += loss.data.item()
         num_batches += 1   
     print("epoch: ", epoch, ", training loss: ", train_loss/num_batches)                
-    print('training accuracy: ', [ci/total for ci in correct_sum])
+    train_acc = [ci/total for ci in correct_sum]          
+    print('training accuracy: ', train_acc)
+    logger.info(f'epoch:{epoch} training loss: {train_loss/num_batches}, accuracy: {train_acc}')
 
 
 def train_basis_STE(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_bin, epoch):
@@ -115,7 +168,15 @@ def train_basis_STE(net, train_loader, loss_func, optimizer_w, optimizer_b, para
     num_batches = 0
     correct_sum = [0. for i in range(len(TOPK))]
     total = 0
-    for (inputs, labels) in train_loader:               
+    for (inputs, labels) in train_loader:      
+        #------------------
+        if num_batches > BATCH_LIMIT:
+            num_batches = BATCH_LIMIT
+            logger.debug(f'reached batch limit of {BATCH_LIMIT}')
+            break;
+        if num_batches % 100 == 0:
+            logger.debug(f'training basis STE batch {num_batches}')
+        #------------------               
         inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
         optimizer_w.zero_grad()
         optimizer_b.zero_grad()
@@ -129,7 +190,9 @@ def train_basis_STE(net, train_loader, loss_func, optimizer_w, optimizer_b, para
         train_loss += loss.data.item()
         num_batches += 1    
     print("epoch: ", epoch, ", training loss: ", train_loss/num_batches)                
-    print('training accuracy: ', [ci/total for ci in correct_sum])
+    train_acc = [ci/total for ci in correct_sum]          
+    print('training accuracy: ', train_acc)
+    logger.info(f'epoch:{epoch} training loss: {train_loss/num_batches}, accuracy: {train_acc}')
 
 
 def prune(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_bin, pruning_rate, epoch):
@@ -139,7 +202,15 @@ def prune(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_b
     num_batches = 0
     correct_sum = [0. for i in range(len(TOPK))]
     total = 0
-    for (inputs, labels) in train_loader:               
+    for (inputs, labels) in train_loader:   
+        #------------------
+        if num_batches > BATCH_LIMIT:
+            num_batches = BATCH_LIMIT
+            logger.debug(f'reached batch limit of {BATCH_LIMIT}')
+            break;
+        if num_batches % 100 == 0:
+            logger.debug(f'prune batch {num_batches}')
+        #------------------                  
         inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
         optimizer_w.zero_grad()
         optimizer_b.zero_grad()
@@ -153,7 +224,9 @@ def prune(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_b
         num_batches += 1
         total += labels.size(0)
     print("epoch: ", epoch, ", pruning loss: ", train_loss/num_batches)                
-    print('pruning accuracy: ', [ci/total for ci in correct_sum])
+    train_acc = [ci/total for ci in correct_sum]          
+    print('training accuracy: ', train_acc)
+    logger.info(f'epoch:{epoch} training loss: {train_loss/num_batches}, accuracy: {train_acc}')
     num_weight_layer = 0.
     num_bit_layer = 0.
     print('currrent number of binary filters per layer: ')
@@ -165,6 +238,7 @@ def prune(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_b
         num_bit_layer += p_w_bin.avg_bit*p_w_bin.num_weight
         print(p_w_bin.avg_bit)
     print('currrent average bitwidth: ', num_bit_layer/num_weight_layer)
+    logger.info(f'current avg bitwidth: {num_bit_layer/num_weight_layer}')
 
  
 def initialize(net, train_loader, loss_func, structure, num_subchannel, max_bit):
@@ -199,7 +273,15 @@ def initialize(net, train_loader, loss_func, structure, num_subchannel, max_bit)
     num_batches = 0
     correct_sum = [0. for i in range(len(TOPK))]
     total = 0
-    for (inputs, labels) in train_loader:               
+    for (inputs, labels) in train_loader:
+        #------------------
+        if num_batches > BATCH_LIMIT:
+            num_batches = BATCH_LIMIT
+            logger.debug(f'reached batch limit of {BATCH_LIMIT}')
+            break;
+        if num_batches % 100 == 0:
+            logger.debug(f'prune batch {num_batches}')
+        #------------------                 
         inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
         outputs = net(inputs)
         loss = loss_func(outputs, labels)
@@ -208,7 +290,9 @@ def initialize(net, train_loader, loss_func, structure, num_subchannel, max_bit)
         train_loss += loss.data.item()
         num_batches += 1
     print('train loss: ', train_loss/num_batches)
-    print('train accuracy: ', [ci/total for ci in correct_sum]) 
+    train_acc = [ci/total for ci in correct_sum]          
+    print('training accuracy: ', train_acc)
+    logger.info(f'training loss: {train_loss/num_batches}, accuracy: {train_acc}')
     num_weight_layer = 0.
     num_bit_layer = 0.
     print('currrent binary filter number per layer: ')
@@ -220,6 +304,7 @@ def initialize(net, train_loader, loss_func, structure, num_subchannel, max_bit)
         num_bit_layer += p_w_bin.avg_bit*p_w_bin.num_weight
         print(p_w_bin.avg_bit)
     print('currrent average bitwidth: ', num_bit_layer/num_weight_layer)
+    logger.info(f'current avg bitwidth: {num_bit_layer/num_weight_layer}')
     return parameters_w, parameters_b, parameters_w_bin 
       
      
@@ -232,6 +317,10 @@ def validate(net, val_loader, loss_func):
     total = 0
     with torch.no_grad():
         for (inputs, labels) in val_loader:
+            #------------------
+            if num_batches % 100 == 0:
+                logger.debug(f'prune batch {num_batches}')
+            #------------------  
             inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
             outputs = net(inputs)
             loss = loss_func(outputs, labels)  
@@ -240,8 +329,10 @@ def validate(net, val_loader, loss_func):
             val_loss += loss.data.item()
             num_batches += 1 
         print('validation loss: ', val_loss/num_batches)
-        print("validation accuracy: ", [ci/total for ci in correct_sum])
-        return [ci/total for ci in correct_sum]
+        val_acc = [ci/total for ci in correct_sum]          
+        print('validation accuracy: ', val_acc)
+        logger.info(f'val loss: {val_loss/num_batches}, accuracy: {val_acc}')
+        return val_acc
 
 
 def test(net, test_loader, loss_func):
@@ -253,6 +344,10 @@ def test(net, test_loader, loss_func):
     total = 0
     with torch.no_grad():
         for (inputs, labels) in test_loader:
+            #------------------
+            if num_batches % 100 == 0:
+                logger.debug(f'prune batch {num_batches}')
+            #------------------  
             inputs, labels = inputs.cuda(non_blocking=True), labels.cuda(non_blocking=True)
             outputs = net(inputs)
             loss = loss_func(outputs, labels)  
@@ -261,7 +356,11 @@ def test(net, test_loader, loss_func):
             test_loss += loss.data.item()
             num_batches += 1
         print("test loss: ", test_loss/num_batches)
-        print("test accuracy: ", [ci/total for ci in correct_sum])
+        test_acc = [ci/total for ci in correct_sum]          
+        print('test accuracy: ', test_acc)
+        logger.info(f'test loss: {test_loss/num_batches}, accuracy: {test_acc}')
+        
+        
         
 
 def save_model(file_name, net, optimizer_w, optimizer_b, parameters_w_bin):

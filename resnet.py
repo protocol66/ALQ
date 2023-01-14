@@ -1,6 +1,17 @@
 import argparse
 import os
 
+import logging
+from datetime import datetime
+
+os.makedirs('logs', exist_ok=True)
+logger = logging.getLogger('resnet')
+timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+logging.basicConfig(filename=f'logs/resnet_{timestamp}.log',
+                    format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+                    datefmt='%I:%M:%S %p',
+                    encoding='utf-8', level=logging.INFO)
+
 import torch
 import math
 from torchvision import datasets, transforms 
@@ -184,7 +195,6 @@ if __name__ == "__main__":
         if args.subc is None:
             args.subc = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2]
 
-
     torch.backends.cudnn.benchmark = True
     traindir = os.path.join(args.data, 'train')
     valdir = os.path.join(args.data, 'val')
@@ -197,8 +207,8 @@ if __name__ == "__main__":
                                 normalize,]))
     val_dataset, train_dataset = torch.utils.data.random_split(train_dataset_full, [args.val_size, len(train_dataset_full)-args.val_size])
     num_training_sample = len(train_dataset)
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=16)
-    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=16)
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=args.batch_size, shuffle=True, num_workers=8)
     test_loader = torch.utils.data.DataLoader(
                     datasets.ImageFolder(
                         valdir, transforms.Compose([
@@ -206,7 +216,7 @@ if __name__ == "__main__":
                         transforms.CenterCrop(224),
                         transforms.ToTensor(),
                         normalize,])),
-                    batch_size=args.batch_size, shuffle=True, num_workers=16)
+                    batch_size=args.batch_size, shuffle=True, num_workers=8)
 
 
     if args.PRETRAIN:
@@ -216,33 +226,45 @@ if __name__ == "__main__":
                 net = ResNet(BasicBlock, [2, 2, 2, 2])
             elif args.net == 'resnet34':
                 net = ResNet(BasicBlock, [3, 4, 6, 3])
+            logger.info("downloaded pretrained resnet")  
             net.load_state_dict(torch.utils.model_zoo.load_url(args.model_ori_urls))
             print('available gpu number: ', torch.cuda.device_count())
+            logger.info(f'num of avail gpus: {torch.cuda.device_count()}')
             net = torch.nn.DataParallel(net).cuda()
             loss_func = torch.nn.CrossEntropyLoss().cuda()
             optimizer = torch.optim.SGD(net.parameters(), lr=0.4, nesterov=True, momentum=0.9, weight_decay=1e-4)
             get_accuracy(net, train_loader, loss_func)
+            logger.info("finished pretrain accuracy")
             validate(net, val_loader, loss_func)
+            logger.info("finished pretrain val")
             test(net, test_loader, loss_func)
+            logger.info("finished pretrain test")
             save_model_ori(args.model_ori, net.module, optimizer)
+            logger.info("saved model")
 
         else:
             print('pretraining...')
+            logger.info('starting pretraining step')
             if args.net == 'resnet18':
                 net = ResNet(BasicBlock, [2, 2, 2, 2])
             elif args.net == 'resnet34':
                 net = ResNet(BasicBlock, [3, 4, 6, 3])
             print('available gpu number: ', torch.cuda.device_count())
+            logger.info(f'num of avail gpus: {torch.cuda.device_count()}')
             net = torch.nn.DataParallel(net).cuda()
             loss_func = torch.nn.CrossEntropyLoss().cuda()
         
             # We use the optimization setup according to https://openreview.net/pdf?id=S1gSj0NKvB  
             optimizer = torch.optim.SGD(net.parameters(), lr=0.4, nesterov=True, momentum=0.9, weight_decay=1e-4)
             get_accuracy(net, train_loader, loss_func)
+            logger.info("finished pretrain accuracy")
             val_accuracy = validate(net, val_loader, loss_func)
+            logger.info(" finished pretrain val")
             best_acc = val_accuracy[0]
             test(net, test_loader, loss_func)
+            logger.info("finished pretrain test")
             save_model_ori(args.model_ori, net.module, optimizer)
+            logger.info("saved model")
             
             for epoch in range(0,90):
                 if epoch < 5:
@@ -253,16 +275,21 @@ if __name__ == "__main__":
                     optimizer.param_groups[0]['lr'] *= 0.1  
                 if epoch == 80:
                     optimizer.param_groups[0]['lr'] *= 0.1
+                logger.debug(f"training epoch {epoch} with optimizer lr {optimizer.param_groups[0]['lr']}")
                 train_fullprecision(net, train_loader, loss_func, optimizer, epoch)
                 val_accuracy = validate(net, val_loader, loss_func)
+                logger.debug(f"validated epoch {epoch}")
                 if val_accuracy[0]>best_acc:
+                    logger.debug(f"new best accuracy: {val_accuracy[0]}")
                     best_acc = val_accuracy[0]
                     test(net, test_loader, loss_func)
                     save_model_ori(args.model_ori, net.module, optimizer)
+                    logger.info("saved new best model")
 
 
     if args.ALQ:
         print('adaptive loss-aware quantization...')
+        logger.info('starting ALQ step')
 
         if args.net == 'resnet18':
             net = ResNet(BasicBlock, [2, 2, 2, 2])
@@ -272,6 +299,7 @@ if __name__ == "__main__":
         checkpoint = torch.load(args.model_ori)
         net.load_state_dict(checkpoint['net_state_dict'])
         print('available gpu number: ', torch.cuda.device_count())
+        logger.info(f'num of avail gpus: {torch.cuda.device_count()}')
         net = torch.nn.DataParallel(net).cuda()
         loss_func = torch.nn.CrossEntropyLoss().cuda()
         for name, param in net.named_parameters():
@@ -280,12 +308,16 @@ if __name__ == "__main__":
 
         print('initialization (structured sketching)...')
         parameters_w, parameters_b, parameters_w_bin = initialize(net, train_loader, loss_func, args.structure, args.subc, args.max_bit)
+        logger.info('finished structured sketching')
         optimizer_b = torch.optim.Adam(parameters_b, weight_decay=args.wd) 
         optimizer_w = ALQ_optimizer(parameters_w, weight_decay=args.wd)
         val_accuracy = validate(net, val_loader, loss_func)
+        logger.info('finished model validation')
         best_acc = val_accuracy[0]
         test(net, test_loader, loss_func)
+        logger.info('finished model test')
         save_model(args.model, net.module, optimizer_w, optimizer_b, parameters_w_bin)
+        logger.info('saving initialized model')
         
         M_p = (args.pr/args.top_k)/(args.epoch_prune*math.ceil(num_training_sample/args.batch_size))
 
@@ -305,6 +337,7 @@ if __name__ == "__main__":
                     best_acc = val_accuracy[0]
                     test(net, test_loader, loss_func)
                     #save_model(args.model, net.module, optimizer_w, optimizer_b, parameters_w_bin)
+            logger.info('finished basis optimization')
             
             print('optimizing coordinates...')
             for p_epoch in range(args.epoch_coord):
@@ -316,7 +349,8 @@ if __name__ == "__main__":
                     best_acc = val_accuracy[0]
                     test(net, test_loader, loss_func)
                     #save_model(args.model, net.module, optimizer_w, optimizer_b, parameters_w_bin)
-                    
+            logger.info('finished coord optimization')
+            
             print('pruning...')
             for t_epoch in range(args.epoch_prune):
                 prune(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_bin, [args.top_k, M_p], t_epoch)
@@ -324,10 +358,14 @@ if __name__ == "__main__":
                 best_acc = val_accuracy[0]
                 test(net, test_loader, loss_func)
                 save_model(args.model, net.module, optimizer_w, optimizer_b, parameters_w_bin)              
-
+                logger.info(f'saved epoch {t_epoch} model')
+            logger.info('finished pruning optimization')
+            
+            logger.info(f'finished outer iteration {r}')
 
     if args.POSTTRAIN:
         print('posttraining...')
+        logger.info('starting post-training')
           
         if args.net == 'resnet18':
             net = ResNet(BasicBlock, [2, 2, 2, 2])
@@ -349,7 +387,10 @@ if __name__ == "__main__":
         print('load quantized resnet model...')
         checkpoint = torch.load(args.model)
         net.load_state_dict(checkpoint['net_state_dict'])
+        logger.info('loaded quantized model')
         print('available gpu number: ', torch.cuda.device_count())
+        logger.info(f'num of avail gpus: {torch.cuda.device_count()}')
+        
         net = torch.nn.DataParallel(net).cuda()
         optimizer_w.load_state_dict(checkpoint['optimizer_w_state_dict'])
         optimizer_b.load_state_dict(checkpoint['optimizer_b_state_dict'])
@@ -373,11 +414,16 @@ if __name__ == "__main__":
             num_bit_layer += p_w_bin.avg_bit*p_w_bin.num_weight
             print(p_w_bin.avg_bit)
         print('currrent average bitwidth: ', num_bit_layer/num_weight_layer)
+        logger.info(f'average bitwidth: {num_bit_layer/num_weight_layer}')
 
         get_accuracy(net, train_loader, loss_func)
+        logger.info('finished model train loss/accuracy')
         val_accuracy = validate(net, val_loader, loss_func)
+        logger.info('finished model val')
         best_acc = val_accuracy[0]
+        logger.debug(f"best accuracy: {best_acc}")
         test(net, test_loader, loss_func)
+        logger.info('finished model test')
         optimizer_b.param_groups[0]['lr'] = args.lr
         optimizer_w.param_groups[0]['lr'] = args.lr
         
@@ -389,9 +435,12 @@ if __name__ == "__main__":
             val_accuracy = validate(net, val_loader, loss_func)
             if val_accuracy[0]>best_acc:
                 best_acc = val_accuracy[0]
+                logger.debug(f"new best accuracy: {best_acc}")
                 test(net, test_loader, loss_func)
                 save_model(args.model, net.module, optimizer_w, optimizer_b, parameters_w_bin)
-
+                logger.info('saved new best model')
+        logger.info('finished optimizing basis with STE')
+        
         optimizer_b.param_groups[0]['lr'] = 5e-6
         optimizer_w.param_groups[0]['lr'] = 5e-6
                 
@@ -403,7 +452,10 @@ if __name__ == "__main__":
             val_accuracy = validate(net, val_loader, loss_func)
             if val_accuracy[0]>best_acc:
                 best_acc = val_accuracy[0]
+                logger.debug(f"new best accuracy: {best_acc}")
                 test(net, test_loader, loss_func)
                 save_model(args.model, net.module, optimizer_w, optimizer_b, parameters_w_bin)
-
+                logger.info('saved new best model')
+        logger.info('finished optimizing coord')
+        
     
