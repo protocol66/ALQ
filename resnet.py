@@ -403,6 +403,10 @@ if __name__ == "__main__":
                 if torch.is_tensor(v):
                     state[k] = v.cuda()
 
+        #-------
+        parameters_w_bin = checkpoint['parameters_w_bin']
+        #-------
+        
         num_weight_layer = 0.
         num_bit_layer = 0.
         print('currrent binary filter number per layer: ')
