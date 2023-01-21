@@ -8,6 +8,19 @@ from binarynet import ConvLayer_bin, FCLayer_bin
 from myoptimizer import ALQ_optimizer
 from train import get_accuracy, train_fullprecision, train_basis, train_basis_STE, train_coordinate, validate, test, prune, initialize, save_model, save_model_ori
 
+import os
+
+import logging
+from datetime import datetime
+
+os.makedirs('logs', exist_ok=True)
+logger = logging.getLogger('resnet')
+timestamp = datetime.now().strftime('%Y-%m-%d_%H:%M:%S')
+logging.basicConfig(filename=f'logs/vgg_{timestamp}.log',
+                    format='%(asctime)s %(levelname)s:%(name)s:%(message)s',
+                    datefmt='%I:%M:%S %p',
+                    encoding='utf-8', level=logging.INFO)
+
 # Defining the network (VGG_small)  
 class VGG_small(torch.nn.Module):
     def __init__(self):
@@ -98,6 +111,9 @@ if __name__ == "__main__":
     parser.add_argument('--batch_size', type=int, default=128,
                         help='the number of training samples in each batch')
     args = parser.parse_args()
+    
+    # args.model_ori = args.model_ori.replace('.pth', f'_{timestamp}.pth')
+    # args.model_ori = args.model_ori.replace('.pth', f'_{timestamp}.pth')
     
     torch.backends.cudnn.benchmark = True
     train_dataset_full = datasets.CIFAR10(args.data, train=True, download=True, transform=transforms.Compose([
@@ -194,12 +210,13 @@ if __name__ == "__main__":
                     
             print('pruning...')
             for t_epoch in range(args.epoch_prune):
-                prune(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_bin, [args.top_k, M_p], t_epoch)
+                current_avg_bitwidth = prune(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_bin, [args.top_k, M_p], t_epoch)
                 val_accuracy = validate(net, val_loader, loss_func)
                 best_acc = val_accuracy[0]
                 test(net, test_loader, loss_func)
+                save_model(args.model.replace('.pth', f'{current_avg_bitwidth}.pth'), net, optimizer_w, optimizer_b, parameters_w_bin)
                 save_model(args.model, net, optimizer_w, optimizer_b, parameters_w_bin)
-
+            
     if args.POSTTRAIN:
         print('posttraining...')
             

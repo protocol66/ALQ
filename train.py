@@ -237,8 +237,12 @@ def prune(net, train_loader, loss_func, optimizer_w, optimizer_b, parameters_w_b
         num_weight_layer += p_w_bin.num_weight
         num_bit_layer += p_w_bin.avg_bit*p_w_bin.num_weight
         print(p_w_bin.avg_bit)
-    print('currrent average bitwidth: ', num_bit_layer/num_weight_layer)
-    logger.info(f'current avg bitwidth: {num_bit_layer/num_weight_layer}')
+    
+    current_avg_bitwidth = num_bit_layer/num_weight_layer
+    print('currrent average bitwidth: ', current_avg_bitwidth)
+    logger.info(f'current avg bitwidth: {current_avg_bitwidth}')
+    return current_avg_bitwidth
+    
 
  
 def initialize(net, train_loader, loss_func, structure, num_subchannel, max_bit):
